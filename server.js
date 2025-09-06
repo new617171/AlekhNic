@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const login = require("fca-horizon-remake");
+const login = require("facebook-chat-api");
 const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
