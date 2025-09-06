@@ -13,6 +13,9 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+// Serve static files from the public directory
+app.use(express.static('public'));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -27,7 +30,7 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 } // 1MB limit
 });
 
-// Store active API instances (in production, use Redis or database)
+// Store active API instances
 const activeConnections = new Map();
 
 // Helper function to validate appstate
@@ -138,120 +141,6 @@ app.get('/api/groups/:sessionId', async (req, res) => {
 
   } catch (error) {
     console.error('Groups fetch error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Change group name endpoint
-app.post('/api/change-group-name', async (req, res) => {
-  try {
-    const { sessionId, groupId, newGroupName } = req.body;
-
-    if (!sessionId || !groupId || !newGroupName) {
-      return res.status(400).json({
-        error: 'Missing required fields: sessionId, groupId, and newGroupName are required'
-      });
-    }
-
-    if (newGroupName.length > 100) {
-      return res.status(400).json({
-        error: 'Group name too long. Maximum 100 characters allowed.'
-      });
-    }
-
-    const connection = activeConnections.get(sessionId);
-    if (!connection) {
-      return res.status(401).json({ error: 'Invalid or expired session. Please login again.' });
-    }
-
-    const { api } = connection;
-    connection.lastUsed = Date.now();
-
-    api.setTitle(newGroupName, groupId, (err) => {
-      if (err) {
-        console.error('Change group name error:', err);
-        return res.status(500).json({ 
-          error: 'Failed to change group name. You might not have permission.' 
-        });
-      }
-
-      res.json({
-        success: true,
-        message: `Group name changed to "${newGroupName}"`,
-        newName: newGroupName
-      });
-    });
-
-  } catch (error) {
-    console.error('Group name change error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Change nicknames endpoint
-app.post('/api/change-nicknames', async (req, res) => {
-  try {
-    const { sessionId, groupId, nickname, changeType = 'all' } = req.body;
-
-    if (!sessionId || !groupId || !nickname) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: sessionId, groupId, nickname' 
-      });
-    }
-
-    const connection = activeConnections.get(sessionId);
-    if (!connection) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
-    }
-
-    const { api } = connection;
-    connection.lastUsed = Date.now();
-
-    // Get group info
-    api.getThreadInfo(groupId, async (err, info) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to get group info' });
-      }
-
-      const userIDs = info.participantIDs;
-      let successCount = 0;
-      let failCount = 0;
-      const results = [];
-
-      // Send initial response
-      res.json({ 
-        message: 'Nickname change started',
-        totalMembers: userIDs.length,
-        groupName: info.threadName
-      });
-
-      // Process nickname changes
-      for (let i = 0; i < userIDs.length; i++) {
-        const userId = userIDs[i];
-        
-        await new Promise(resolve => {
-          api.changeNickname(nickname, groupId, userId, (err) => {
-            if (!err) {
-              successCount++;
-              results.push({ userId, status: 'success' });
-              console.log(`✅ Changed nickname for user ID ${userId} (${i + 1}/${userIDs.length})`);
-            } else {
-              failCount++;
-              results.push({ userId, status: 'failed', error: err.error });
-              console.log(`⚠️ Failed to change nickname for user ID ${userId}`);
-            }
-            
-            // Add delay to avoid rate limiting
-            setTimeout(resolve, 1500);
-          });
-        });
-      }
-
-      console.log(`🎉 Nickname change completed! Success: ${successCount}, Failed: ${failCount}`);
-    });
-
-  } catch (error) {
-    console.error('Nickname change error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -487,14 +376,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve frontend in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static('public'));
-  
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  });
-}
+// Serve frontend for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -521,8 +406,7 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Run every 5 minutes
 
 app.listen(port, () => {
-  console.log(`🚀 Facebook Group Locker API running on port ${port}`);
-  console.log(`📊 Health check available at: http://localhost:${port}/api/health`);
+  console.log(`🚀 Facebook Group Locker running on port ${port}`);
+  console.log(`📊 Frontend: http://localhost:${port}`);
+  console.log(`📊 API: http://localhost:${port}/api/health`);
 });
-
-module.exports = app;
